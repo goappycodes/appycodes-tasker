@@ -2,12 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
 
-// Edge middleware: runs before any /dashboard or /api/* request.
-// We do NOT call lib/env here because middleware runs at the edge and
-// SESSION_SECRET is the only thing it needs.
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "";
 
-const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/health"];
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/", // OAuth flow
+  "/api/health", // healthcheck
+  "/api/slack/", // Slack endpoints (commands, interactions, options) — Slack-signature-verified inside the handler
+];
 
 export const config = {
   matcher: ["/dashboard/:path*", "/api/:path*"],
@@ -20,6 +21,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Service-token path: actual validation happens in `requireAuth()` inside
+  // the route handler. Middleware just lets the request through if a Bearer
+  // header is present so it can be checked there with full DB access.
+  const auth = req.headers.get("authorization");
+  if (auth?.startsWith("Bearer ")) {
+    return NextResponse.next();
+  }
+
+  // Session-cookie path
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!token || !SESSION_SECRET) {
     return rejectUnauthorized(req);

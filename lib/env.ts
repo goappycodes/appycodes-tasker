@@ -15,6 +15,12 @@ const schema = z.object({
   SLACK_CLIENT_SECRET: z.string().min(1),
   SLACK_REDIRECT_URI: z.string().url(),
 
+  // Sprint 2 — bot
+  SLACK_SIGNING_SECRET: optStr,
+  SLACK_BOT_TOKEN: optStr,
+  TASKER_SERVICE_TOKEN: optStr,
+  TASKER_API_BASE: optStr,
+
   APP_URL: z.string().url().default("http://localhost:3000"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   COMMIT_SHA: z.string().default("local"),

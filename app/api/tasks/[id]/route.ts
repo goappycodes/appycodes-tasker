@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireSession, canEditTask } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
+import { canEditTask } from "@/lib/permissions";
 import { db } from "@/lib/supabase";
 import { apiError, fromZod } from "@/lib/errors";
 import { updateTaskSchema, validateStatusTransition } from "@/lib/validation";
 import { recordTaskDiff } from "@/lib/events";
 import { logger } from "@/lib/logger";
+import { fireNotify } from "@/lib/notify";
 import type { TaskRow } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +14,9 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/tasks/:id — task with embedded events and (Sprint-4) time_entries.
  */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
 
   const supabase = db();
   const { data: task, error } = await supabase
@@ -47,11 +49,16 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 /**
- * PATCH /api/tasks/:id — creator, assignee, project lead, or manager+.
+ * PATCH /api/tasks/:id
+ *
+ * Creator / assignee / project-lead+ / manager+ can edit. Side effects:
+ *   - status → blocked       requires `blocker_reason`; fires task_blocked
+ *   - status → done          sets `completed_at`; fires task_completed
+ *   - assignee changed       fires task_reassigned to new assignee
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
 
   let body: unknown;
   try {
@@ -73,46 +80,48 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (getErr) return apiError("internal_error", getErr.message);
   if (!existing) return apiError("not_found", `Task ${params.id} not found.`);
 
-  // Look up the project's lead to apply edit-permission rules.
   const { data: project, error: projErr } = await supabase
     .from("projects")
-    .select("id, lead_user_id, is_active")
+    .select("id, lead_user_id, status")
     .eq("id", existing.project_id)
     .maybeSingle();
   if (projErr) return apiError("internal_error", projErr.message);
 
   const allowed = canEditTask({
-    user: { id: session.userId, role: session.role },
+    user: { id: auth.userId, role: auth.role },
     task: { creator_id: existing.creator_id, assignee_id: existing.assignee_id },
     projectLeadId: project?.lead_user_id ?? null,
   });
   if (!allowed) {
-    return apiError(
-      "forbidden",
-      "Only the creator, assignee, project lead, or a manager can edit this task.",
-    );
+    return apiError("forbidden", "Only the assignee, creator, or project lead can edit this task.");
   }
 
-  // Status transition rule.
   if (input.status && input.status !== existing.status) {
     const reason = validateStatusTransition(existing.status, input.status);
     if (reason) return apiError("validation_error", reason);
-  }
-
-  // If reassigning to a new project, verify it's active.
-  if (input.project_id && input.project_id !== existing.project_id) {
-    const { data: newProj, error: npErr } = await supabase
-      .from("projects")
-      .select("id, is_active")
-      .eq("id", input.project_id)
-      .maybeSingle();
-    if (npErr) return apiError("internal_error", npErr.message);
-    if (!newProj || !newProj.is_active) {
-      return apiError("validation_error", "Target project does not exist or is inactive.");
+    if (input.status === "blocked") {
+      const blockerReason = input.blocker_reason ?? existing.blocker_reason;
+      if (!blockerReason || blockerReason.trim() === "") {
+        return apiError(
+          "validation_error",
+          "blocker_reason is required when moving a task to blocked.",
+        );
+      }
     }
   }
 
-  // Validate assignee when changed.
+  if (input.project_id && input.project_id !== existing.project_id) {
+    const { data: newProj, error: npErr } = await supabase
+      .from("projects")
+      .select("id, status")
+      .eq("id", input.project_id)
+      .maybeSingle();
+    if (npErr) return apiError("internal_error", npErr.message);
+    if (!newProj || newProj.status === "done") {
+      return apiError("validation_error", "Target project does not exist or is archived.");
+    }
+  }
+
   if (input.assignee_id && input.assignee_id !== existing.assignee_id) {
     const { data: assignee, error: aErr } = await supabase
       .from("users")
@@ -125,18 +134,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
+  const update: Record<string, unknown> = {};
+  if (input.title !== undefined) update.title = input.title;
+  if (input.description !== undefined) update.description = input.description;
+  if (input.status !== undefined) {
+    update.status = input.status;
+    if (input.status === "done") update.completed_at = new Date().toISOString();
+    if (input.status !== "blocked") update.blocker_reason = null;
+  }
+  if (input.priority !== undefined) update.priority = input.priority;
+  if (input.story_points !== undefined) update.story_points = input.story_points;
+  if (input.assignee_id !== undefined) update.assignee_id = input.assignee_id;
+  if (input.project_id !== undefined) update.project_id = input.project_id;
+  if (input.due_date !== undefined) update.due_date = input.due_date;
+  if (input.blocker_reason !== undefined) update.blocker_reason = input.blocker_reason;
+
   const { data: updated, error: updErr } = await supabase
     .from("tasks")
-    .update({
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.priority !== undefined ? { priority: input.priority } : {}),
-      ...(input.story_points !== undefined ? { story_points: input.story_points } : {}),
-      ...(input.assignee_id !== undefined ? { assignee_id: input.assignee_id } : {}),
-      ...(input.project_id !== undefined ? { project_id: input.project_id } : {}),
-      ...(input.due_date !== undefined ? { due_date: input.due_date } : {}),
-    })
+    .update(update)
     .eq("id", params.id)
     .select("*")
     .single();
@@ -147,12 +162,41 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   try {
     await recordTaskDiff(supabase, {
-      actorId: session.userId,
+      actorId: auth.userId,
       before: existing as TaskRow,
       after: updated as TaskRow,
     });
   } catch (err) {
     logger.error({ err, taskId: params.id }, "task_events diff write failed");
+  }
+
+  // Side-effect notifications (best-effort; failures are logged but don't fail the request).
+  if (input.status === "blocked" && existing.status !== "blocked") {
+    await fireNotify({
+      kind: "task_blocked",
+      task_id: updated.id,
+      actor_user_id: auth.userId,
+    });
+  } else if (input.status === "done" && existing.status !== "done") {
+    await fireNotify({
+      kind: "task_completed",
+      task_id: updated.id,
+      actor_user_id: auth.userId,
+    });
+  }
+  if (
+    input.assignee_id !== undefined &&
+    input.assignee_id !== existing.assignee_id &&
+    input.assignee_id &&
+    input.assignee_id !== auth.userId
+  ) {
+    await fireNotify({
+      kind: "task_reassigned",
+      task_id: updated.id,
+      actor_user_id: auth.userId,
+      target_user_id: input.assignee_id,
+      previous_assignee_id: existing.assignee_id ?? undefined,
+    });
   }
 
   return NextResponse.json(updated);

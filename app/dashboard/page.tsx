@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { db } from "@/lib/supabase";
 import type { ProjectRow, TaskRow, UserRow, TaskStatus } from "@/types/db";
 import { TaskStatusPill } from "@/components/TaskStatusPill";
+import { CreateTaskModalTrigger } from "@/components/CreateTaskModal";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function DashboardPage({
   const session = (await getSession())!;
   const statusFilter = (searchParams.status as TaskStatus | "all" | undefined) ?? "open";
   const projectFilter = searchParams.project ?? "all";
-  const mineOnly = searchParams.mine !== "0"; // default ON
+  const mineOnly = searchParams.mine !== "0";
 
   const supabase = db();
 
@@ -44,8 +45,12 @@ export default async function DashboardPage({
 
   const [{ data: tasks, error: tErr }, { data: projects }, { data: users }] = await Promise.all([
     query,
-    supabase.from("projects").select("id, name, slug").eq("is_active", true).order("name"),
-    supabase.from("users").select("id, name").eq("is_active", true),
+    supabase
+      .from("projects")
+      .select("id, code, name, slug, status")
+      .eq("status", "active")
+      .order("name"),
+    supabase.from("users").select("id, name").eq("is_active", true).order("name"),
   ]);
 
   if (tErr) {
@@ -53,9 +58,24 @@ export default async function DashboardPage({
   }
 
   const projectById = new Map(
-    (projects ?? []).map((p: Pick<ProjectRow, "id" | "name" | "slug">) => [p.id, p]),
+    (projects ?? []).map((p: Pick<ProjectRow, "id" | "code" | "name" | "slug" | "status">) => [
+      p.id,
+      p,
+    ]),
   );
   const userById = new Map((users ?? []).map((u: Pick<UserRow, "id" | "name">) => [u.id, u]));
+
+  const projectOpts = (projects ?? []).map((p) => ({
+    id: p.id as string,
+    code: p.code as string,
+    name: p.name as string,
+    status: p.status as "active" | "paused" | "done",
+  }));
+
+  const userOpts = (users ?? []).map((u) => ({
+    id: u.id as string,
+    name: u.name as string,
+  }));
 
   return (
     <main>
@@ -69,6 +89,12 @@ export default async function DashboardPage({
               : (projectById.get(projectFilter)?.name ?? "?")}
           </p>
         </div>
+        <CreateTaskModalTrigger
+          projects={projectOpts}
+          users={userOpts}
+          currentUser={{ id: session.userId }}
+          defaultProjectId={projectFilter !== "all" ? projectFilter : undefined}
+        />
       </header>
 
       <Filters
@@ -107,7 +133,7 @@ export default async function DashboardPage({
                     </Link>
                   </td>
                   <td className="px-4 py-2 text-muted">
-                    {projectById.get(t.project_id)?.name ?? "—"}
+                    {projectById.get(t.project_id)?.code ?? "—"}
                   </td>
                   <td className="px-4 py-2">
                     <TaskStatusPill status={t.status} />

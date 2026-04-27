@@ -1,9 +1,14 @@
-// Hand-written DB row types matching db/migrations/0001_initial.sql.
+// Hand-written DB row types matching db/migrations/0001_initial.sql + 0002_sprint2.sql.
 // Replace with `supabase gen types typescript` output once the schema stabilises.
 
 export type UserRole = "admin" | "manager" | "lead" | "dev";
+// `Role` mirrors the DB enum 1:1; service-token requests still resolve to a
+// real user via `X-Slack-User-Id`, so permissions use the human's role.
+export type Role = UserRole;
+
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done";
 export type TaskPriority = "P0" | "P1" | "P2" | "P3";
+export type ProjectStatus = "active" | "paused" | "done";
 export type TaskEventType =
   | "created"
   | "status_changed"
@@ -24,6 +29,7 @@ export interface UserRow {
   clockify_user_id: string | null;
   role: UserRole;
   is_active: boolean;
+  capacity_hours_per_day: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -31,10 +37,13 @@ export interface UserRow {
 export interface ProjectRow {
   id: string;
   slug: string;
+  code: string;
   name: string;
   description: string | null;
+  client_name: string | null;
   slack_channel_id: string | null;
   lead_user_id: string | null;
+  status: ProjectStatus;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -51,6 +60,8 @@ export interface TaskRow {
   assignee_id: string | null;
   creator_id: string;
   due_date: string | null;
+  completed_at: string | null;
+  blocker_reason: string | null;
   created_at: string;
   updated_at: string;
 }

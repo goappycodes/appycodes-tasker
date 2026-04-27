@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/supabase";
 import { apiError, fromZod } from "@/lib/errors";
 import { createTaskSchema, taskFilterSchema } from "@/lib/validation";
 import { recordTaskCreated } from "@/lib/events";
 import { logger } from "@/lib/logger";
+import { fireNotify } from "@/lib/notify";
 import type { TaskRow } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +16,8 @@ export const dynamic = "force-dynamic";
  * Filters: assignee, project, status, priority, dueBefore, limit.
  */
 export async function GET(req: Request) {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
 
   const url = new URL(req.url);
   const parsed = taskFilterSchema.safeParse({
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
   let q = db()
     .from("tasks")
     .select(
-      "id, project_id, title, status, priority, story_points, assignee_id, creator_id, due_date, created_at, updated_at",
+      "id, project_id, title, status, priority, story_points, assignee_id, creator_id, due_date, completed_at, created_at, updated_at",
     )
     .order("created_at", { ascending: false })
     .limit(f.limit);
@@ -51,10 +52,16 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/tasks — any logged-in user can create a task.
+ *
+ * `notify=true` query param (default) fires a `task_assigned` Slack DM to the
+ * assignee post-insert. Set `notify=false` to skip.
  */
 export async function POST(req: Request) {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
+
+  const url = new URL(req.url);
+  const notify = url.searchParams.get("notify") !== "false";
 
   let body: unknown;
   try {
@@ -69,18 +76,17 @@ export async function POST(req: Request) {
 
   const supabase = db();
 
-  // Verify project exists & is active.
+  // Verify project exists and is not archived.
   const { data: project, error: projErr } = await supabase
     .from("projects")
-    .select("id, is_active")
+    .select("id, status")
     .eq("id", input.project_id)
     .maybeSingle();
   if (projErr) return apiError("internal_error", projErr.message);
-  if (!project || !project.is_active) {
-    return apiError("validation_error", "Project does not exist or is inactive.");
+  if (!project || project.status === "done") {
+    return apiError("validation_error", "Project does not exist or is archived.");
   }
 
-  // Verify assignee, if provided, is active.
   if (input.assignee_id) {
     const { data: assignee, error: aErr } = await supabase
       .from("users")
@@ -103,7 +109,7 @@ export async function POST(req: Request) {
       priority: input.priority,
       story_points: input.story_points,
       assignee_id: input.assignee_id ?? null,
-      creator_id: session.userId,
+      creator_id: auth.userId,
       due_date: input.due_date ?? null,
     })
     .select("*")
@@ -114,9 +120,18 @@ export async function POST(req: Request) {
   }
 
   try {
-    await recordTaskCreated(supabase, { actorId: session.userId, task: created as TaskRow });
+    await recordTaskCreated(supabase, { actorId: auth.userId, task: created as TaskRow });
   } catch (err) {
     logger.error({ err }, "task_events write failed for created event");
+  }
+
+  if (notify && created.assignee_id && created.assignee_id !== auth.userId) {
+    await fireNotify({
+      kind: "task_assigned",
+      task_id: created.id,
+      actor_user_id: auth.userId,
+      target_user_id: created.assignee_id,
+    });
   }
 
   return NextResponse.json(created, { status: 201 });

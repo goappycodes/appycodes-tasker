@@ -14,11 +14,9 @@ import { createClient } from "@supabase/supabase-js";
 
 loadDotenv();
 
-const supabase = createClient(
-  required("SUPABASE_URL"),
-  required("SUPABASE_SERVICE_ROLE_KEY"),
-  { auth: { persistSession: false, autoRefreshToken: false } },
-);
+const supabase = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 // ---------------------------------------------------------------------------
 // Reference data
@@ -26,36 +24,108 @@ const supabase = createClient(
 type Role = "admin" | "manager" | "lead" | "dev";
 
 const USERS: Array<{ email: string; name: string; role: Role; slack_handle?: string }> = [
-  { email: "ritesh@appycodes.com", name: "Ritesh",        role: "admin",   slack_handle: "ritesh" },
-  { email: "swati@appycodes.com",  name: "Swati",         role: "admin",   slack_handle: "swati" },
-  { email: "priya@appycodes.com",  name: "Priya Verma",   role: "manager", slack_handle: "priya" },
-  { email: "arjun@appycodes.com",  name: "Arjun Mehta",   role: "lead",    slack_handle: "arjun" },
-  { email: "tania@appycodes.com",  name: "Tania Bose",    role: "lead",    slack_handle: "tania" },
-  { email: "karan@appycodes.com",  name: "Karan Singh",   role: "dev",     slack_handle: "karan" },
-  { email: "neha@appycodes.com",   name: "Neha Iyer",     role: "dev",     slack_handle: "neha" },
-  { email: "vikram@appycodes.com", name: "Vikram Joshi",  role: "dev",     slack_handle: "vikram" },
-  { email: "aditi@appycodes.com",  name: "Aditi Sharma",  role: "dev",     slack_handle: "aditi" },
-  { email: "rahul@appycodes.com",  name: "Rahul Das",     role: "dev",     slack_handle: "rahul" },
-  { email: "meera@appycodes.com",  name: "Meera Nair",    role: "dev",     slack_handle: "meera" },
-  { email: "sanjay@appycodes.com", name: "Sanjay Kapoor", role: "dev",     slack_handle: "sanjay" },
+  { email: "ritesh@appycodes.com", name: "Ritesh", role: "admin", slack_handle: "ritesh" },
+  { email: "swati@appycodes.com", name: "Swati", role: "admin", slack_handle: "swati" },
+  { email: "priya@appycodes.com", name: "Priya Verma", role: "manager", slack_handle: "priya" },
+  { email: "arjun@appycodes.com", name: "Arjun Mehta", role: "lead", slack_handle: "arjun" },
+  { email: "tania@appycodes.com", name: "Tania Bose", role: "lead", slack_handle: "tania" },
+  { email: "karan@appycodes.com", name: "Karan Singh", role: "dev", slack_handle: "karan" },
+  { email: "neha@appycodes.com", name: "Neha Iyer", role: "dev", slack_handle: "neha" },
+  { email: "vikram@appycodes.com", name: "Vikram Joshi", role: "dev", slack_handle: "vikram" },
+  { email: "aditi@appycodes.com", name: "Aditi Sharma", role: "dev", slack_handle: "aditi" },
+  { email: "rahul@appycodes.com", name: "Rahul Das", role: "dev", slack_handle: "rahul" },
+  { email: "meera@appycodes.com", name: "Meera Nair", role: "dev", slack_handle: "meera" },
+  { email: "sanjay@appycodes.com", name: "Sanjay Kapoor", role: "dev", slack_handle: "sanjay" },
 ];
 
 const PROJECTS: Array<{
   slug: string;
+  code: string; // 2-6 uppercase letters (Sprint 2)
   name: string;
   description: string;
-  lead: string;          // email
+  client_name?: string;
+  lead: string;
   slack_channel_id?: string;
-  taskTarget: number;    // total tasks we want for this project
+  taskTarget: number;
 }> = [
-  { slug: "tasker",         name: "Tasker (internal)",       description: "Internal task OS replacing Trello + Sheets",       lead: "swati@appycodes.com",  slack_channel_id: "C00TASKER",   taskTarget: 12 },
-  { slug: "website",        name: "Website redesign",        description: "appycodes.com refresh — new landing + blog",       lead: "ritesh@appycodes.com", slack_channel_id: "C00WEB",      taskTarget: 8  },
-  { slug: "mobile-app",     name: "Mobile app v2",           description: "Rewrite of the field-ops app",                     lead: "arjun@appycodes.com",  slack_channel_id: "C00MOBILE",   taskTarget: 10 },
-  { slug: "ml-pipeline",    name: "ML data pipeline",        description: "Ingestion + feature store for the recsys client",  lead: "tania@appycodes.com",  slack_channel_id: "C00ML",       taskTarget: 8  },
-  { slug: "billing",        name: "Billing system overhaul", description: "Stripe migration + invoice rework",                lead: "priya@appycodes.com",  slack_channel_id: "C00BILL",     taskTarget: 6  },
-  { slug: "ops-tools",      name: "Internal ops tools",      description: "Admin dashboards, on-call runbooks",               lead: "tania@appycodes.com",  slack_channel_id: "C00OPS",      taskTarget: 5  },
-  { slug: "support-portal", name: "Customer support portal", description: "Self-serve ticketing for clients",                 lead: "arjun@appycodes.com",  slack_channel_id: "C00SUPPORT",  taskTarget: 5  },
-  { slug: "inbox",          name: "Inbox (uncategorised)",   description: "Default project for /task add fallbacks",          lead: "ritesh@appycodes.com",                                  taskTarget: 4  },
+  {
+    slug: "tasker",
+    code: "TASK",
+    name: "Tasker (internal)",
+    description: "Internal task OS replacing Trello + Sheets",
+    client_name: "AppyCodes",
+    lead: "swati@appycodes.com",
+    slack_channel_id: "C00TASKER",
+    taskTarget: 12,
+  },
+  {
+    slug: "website",
+    code: "WEB",
+    name: "Website redesign",
+    description: "appycodes.com refresh — new landing + blog",
+    client_name: "AppyCodes",
+    lead: "ritesh@appycodes.com",
+    slack_channel_id: "C00WEB",
+    taskTarget: 8,
+  },
+  {
+    slug: "mobile-app",
+    code: "MOB",
+    name: "Mobile app v2",
+    description: "Rewrite of the field-ops app",
+    client_name: "FieldCo",
+    lead: "arjun@appycodes.com",
+    slack_channel_id: "C00MOBILE",
+    taskTarget: 10,
+  },
+  {
+    slug: "ml-pipeline",
+    code: "ML",
+    name: "ML data pipeline",
+    description: "Ingestion + feature store for the recsys client",
+    client_name: "RecsysCorp",
+    lead: "tania@appycodes.com",
+    slack_channel_id: "C00ML",
+    taskTarget: 8,
+  },
+  {
+    slug: "billing",
+    code: "BILL",
+    name: "Billing system overhaul",
+    description: "Stripe migration + invoice rework",
+    client_name: "AppyCodes",
+    lead: "priya@appycodes.com",
+    slack_channel_id: "C00BILL",
+    taskTarget: 6,
+  },
+  {
+    slug: "ops-tools",
+    code: "OPS",
+    name: "Internal ops tools",
+    description: "Admin dashboards, on-call runbooks",
+    client_name: "AppyCodes",
+    lead: "tania@appycodes.com",
+    slack_channel_id: "C00OPS",
+    taskTarget: 5,
+  },
+  {
+    slug: "support-portal",
+    code: "SUPP",
+    name: "Customer support portal",
+    description: "Self-serve ticketing for clients",
+    client_name: "ClientWorks",
+    lead: "arjun@appycodes.com",
+    slack_channel_id: "C00SUPPORT",
+    taskTarget: 5,
+  },
+  {
+    slug: "inbox",
+    code: "IN",
+    name: "Inbox (uncategorised)",
+    description: "Default project for /task add fallbacks",
+    lead: "ritesh@appycodes.com",
+    taskTarget: 4,
+  },
 ];
 
 // Project-specific task title pools — keeps the seed feeling like real work
@@ -140,21 +210,21 @@ const TASK_TITLES: Record<string, string[]> = {
 
 // Status / priority / points / due-date distributions (rough percentages)
 const STATUS_DIST: Array<["todo" | "in_progress" | "blocked" | "done", number]> = [
-  ["todo",        0.50],
+  ["todo", 0.5],
   ["in_progress", 0.25],
-  ["blocked",     0.10],
-  ["done",        0.15],
+  ["blocked", 0.1],
+  ["done", 0.15],
 ];
 const PRIORITY_DIST: Array<["P0" | "P1" | "P2" | "P3", number]> = [
   ["P0", 0.05],
-  ["P1", 0.20],
-  ["P2", 0.50],
+  ["P1", 0.2],
+  ["P2", 0.5],
   ["P3", 0.25],
 ];
 const POINTS_DIST: Array<[1 | 3 | 8, number]> = [
-  [1, 0.30],
-  [3, 0.50],
-  [8, 0.20],
+  [1, 0.3],
+  [3, 0.5],
+  [8, 0.2],
 ];
 
 // Deterministic PRNG so re-runs of the demo produce the same sample
@@ -218,10 +288,13 @@ async function seedProjects(userByEmail: Map<string, { id: string; role: Role }>
   console.log(`→ projects: upserting ${PROJECTS.length}`);
   const payload = PROJECTS.map((p) => ({
     slug: p.slug,
+    code: p.code,
     name: p.name,
     description: p.description,
+    client_name: p.client_name ?? null,
     slack_channel_id: p.slack_channel_id ?? null,
     lead_user_id: userByEmail.get(p.lead)?.id ?? null,
+    status: "active",
     is_active: true,
   }));
   const { error } = await supabase.from("projects").upsert(payload, { onConflict: "slug" });
@@ -286,10 +359,13 @@ async function seedTasks(
       // Mix of past due (overdue), today, near future, far future, and null.
       const dueRoll = rand();
       const due_date =
-        dueRoll < 0.15 && status !== "done" ? isoDate(-Math.ceil(rand() * 14)) // overdue
-        : dueRoll < 0.45 ? isoDate(Math.ceil(rand() * 7))                       // this week
-        : dueRoll < 0.65 ? isoDate(Math.ceil(rand() * 30))                      // this month
-        : null;
+        dueRoll < 0.15 && status !== "done"
+          ? isoDate(-Math.ceil(rand() * 14)) // overdue
+          : dueRoll < 0.45
+            ? isoDate(Math.ceil(rand() * 7)) // this week
+            : dueRoll < 0.65
+              ? isoDate(Math.ceil(rand() * 30)) // this month
+              : null;
 
       tasksToInsert.push({
         project_id: projectId,
@@ -305,7 +381,9 @@ async function seedTasks(
     }
   }
 
-  console.log(`→ tasks: target ${totalTarget}, existing ${existing?.length ?? 0}, inserting ${tasksToInsert.length}`);
+  console.log(
+    `→ tasks: target ${totalTarget}, existing ${existing?.length ?? 0}, inserting ${tasksToInsert.length}`,
+  );
   if (tasksToInsert.length === 0) return [];
 
   const { data: created, error: insErr } = await supabase
@@ -317,7 +395,16 @@ async function seedTasks(
   return created ?? [];
 }
 
-async function seedEvents(newTasks: Array<{ id: string; status: string; creator_id: string; title: string; story_points: number; priority: string }>) {
+async function seedEvents(
+  newTasks: Array<{
+    id: string;
+    status: string;
+    creator_id: string;
+    title: string;
+    story_points: number;
+    priority: string;
+  }>,
+) {
   if (newTasks.length === 0) return;
   type EventRow = {
     task_id: string;
@@ -335,7 +422,12 @@ async function seedEvents(newTasks: Array<{ id: string; status: string; creator_
       actor_id: t.creator_id,
       event_type: "created",
       from_value: null,
-      to_value: { title: t.title, status: "todo", priority: t.priority, story_points: t.story_points },
+      to_value: {
+        title: t.title,
+        status: "todo",
+        priority: t.priority,
+        story_points: t.story_points,
+      },
       metadata: { source: "seed_demo" },
     });
     // For tasks not in 'todo', show the status progression.
