@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Service-role key leak check
+        run: |
+          if grep -RIn --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=.git \
+              -E "SUPABASE_SERVICE_ROLE_KEY" app/ components/ 2>/dev/null; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY referenced from a client-reachable directory"
+            exit 1
+          fi
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run build
+        env:
+          # placeholder env so build does not fail on missing vars
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: stub
+          SUPABASE_ANON_KEY: stub
+          SESSION_SECRET: ci-stub-ci-stub-ci-stub-ci-stub-32
+          SLACK_CLIENT_ID: stub
+          SLACK_CLIENT_SECRET: stub
+          SLACK_REDIRECT_URI: http://localhost:3000/api/auth/slack/callback
+          APP_URL: http://localhost:3000

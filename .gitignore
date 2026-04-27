@@ -1,0 +1,48 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# testing
+coverage
+
+# next.js
+.next
+out
+
+# production
+build
+dist
+
+# cloudflare / vercel
+.vercel
+.wrangler
+
+# misc
+.DS_Store
+*.pem
+.env
+.env*.local
+.env.local
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# editors
+.vscode
+.idea
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# sentry
+.sentryclirc
+
+# seed inputs (kept locally)
+seed/users.csv
+seed/projects.csv
+seed/trello-export.json
