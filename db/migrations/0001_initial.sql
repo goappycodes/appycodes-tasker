@@ -7,6 +7,12 @@
 set search_path = public;
 
 -- -----------------------------------------------------------------------------
+-- Extensions (must be installed before any table that uses their types)
+-- -----------------------------------------------------------------------------
+create extension if not exists citext;
+create extension if not exists pgcrypto;  -- gen_random_uuid()
+
+-- -----------------------------------------------------------------------------
 -- Enums (4)
 -- -----------------------------------------------------------------------------
 do $$ begin
@@ -65,8 +71,6 @@ create table if not exists users (
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
-
-create extension if not exists citext;
 
 drop trigger if exists trg_users_updated_at on users;
 create trigger trg_users_updated_at
