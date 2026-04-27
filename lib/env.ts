@@ -1,9 +1,13 @@
 import { z } from "zod";
 
+// `.env` files often produce empty strings for unset keys — coerce those to
+// undefined so optional() actually behaves as expected.
+const optStr = z.preprocess((v) => (v === "" ? undefined : v), z.string().optional());
+
 const schema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  SUPABASE_ANON_KEY: z.string().min(1).optional(),
+  SUPABASE_ANON_KEY: optStr,
 
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 chars"),
 
@@ -15,8 +19,8 @@ const schema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   COMMIT_SHA: z.string().default("local"),
 
-  SENTRY_DSN: z.string().optional(),
-  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
+  SENTRY_DSN: optStr,
+  NEXT_PUBLIC_SENTRY_DSN: optStr,
 });
 
 export type Env = z.infer<typeof schema>;
